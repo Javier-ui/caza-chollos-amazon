@@ -2,6 +2,7 @@
 import json
 import os
 import signal
+import sys
 import threading
 import time
 import urllib.parse
@@ -12,6 +13,7 @@ BASE = Path(__file__).resolve().parent
 DATA = BASE / "data.json"
 POLL_SECONDS = 30
 SCAN_SECONDS = 600
+ONCE = "--once" in sys.argv
 MARKETS = {
     "ES": "amazon.es", "DE": "amazon.de", "FR": "amazon.fr",
     "IT": "amazon.it", "NL": "amazon.nl", "BE": "amazon.com.be",
@@ -140,12 +142,38 @@ def scan_loop():
             time.sleep(1)
 
 
+def scan_once():
+    with lock:
+        state["last_scan"] = time.strftime("%Y-%m-%d %H:%M:%S %z")
+        save_state()
+    # No se hacen peticiones masivas hasta validar las fuentes permitidas.
+
+
+def poll_once():
+    try:
+        with lock:
+            offset = int(state.get("offset", 0))
+        result = api("getUpdates", {"offset": offset, "timeout": 1, "allowed_updates": json.dumps(["message"])}, timeout=8)
+        for upd in result.get("result", []):
+            with lock:
+                state["offset"] = upd["update_id"] + 1
+                save_state()
+            handle(upd)
+    except Exception as e:
+        print(f"poll once error: {e}", flush=True)
+
+
 def stop(*_):
     global running
     running = False
 
 signal.signal(signal.SIGTERM, stop)
 signal.signal(signal.SIGINT, stop)
+if ONCE:
+    print("dealbot ejecución única", flush=True)
+    poll_once()
+    scan_once()
+    raise SystemExit(0)
 print("dealbot iniciado; polling activo; ciclo de barrido: 600 s", flush=True)
 threading.Thread(target=scan_loop, daemon=True).start()
 poll_loop()
