@@ -146,7 +146,20 @@ def scan_once():
     with lock:
         state["last_scan"] = time.strftime("%Y-%m-%d %H:%M:%S %z")
         save_state()
-    # No se hacen peticiones masivas hasta validar las fuentes permitidas.
+    try:
+        from scanner import format_alert, scan
+        code, alerts = scan()
+        recipients = set(state.get("subscribers", []))
+        target = ENV.get("TARGET_CHAT_ID", "-1003980825772")
+        if target:
+            recipients.add(target)
+        for item in alerts:
+            message = format_alert(code, item)
+            for recipient in recipients:
+                send(recipient, message)
+        print(f"escaneo {code}: {len(alerts)} alertas nuevas", flush=True)
+    except Exception as e:
+        print(f"scan error: {e}", flush=True)
 
 
 def poll_once():
